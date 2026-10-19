@@ -608,6 +608,13 @@ where
         self.try_get_free_buffer()
     }
 
+    /// Poll OUTPUT completion with a bounded timeout, independently of CAPTURE.
+    pub fn poll_output(&mut self, timeout: std::time::Duration) -> Result<(), GetBufferError> {
+        for _ in self.state.output_poller.poll(Some(timeout))? {}
+        self.dequeue_output_buffers()?;
+        Ok(())
+    }
+
     /// Kick the decoder and see if some input buffers fall as a result.
     ///
     /// No, really. Completed input buffers are typically checked when calling

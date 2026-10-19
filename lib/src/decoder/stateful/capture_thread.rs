@@ -307,8 +307,10 @@ where
         // Now get the parameters of the new format and build our new CAPTURE
         // queue.
 
-        // TODO use the proper control to get the right value.
-        let min_num_buffers = 4usize;
+        // Query after SOURCE_CHANGE, when the stream's reference requirement is known.
+        let min_num_buffers = crate::ioctl::g_ctrl(&*self.device,
+            crate::bindings::V4L2_CID_MIN_BUFFERS_FOR_CAPTURE)
+            .map_err(anyhow::Error::from)? as usize;
         debug!("Stream requires {} capture buffers", min_num_buffers);
 
         let visible_rect = capture_queue.get_selection(SelectionTarget::Compose)?;

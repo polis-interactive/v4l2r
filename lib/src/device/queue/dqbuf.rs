@@ -6,7 +6,7 @@ use super::{
 };
 use crate::ioctl::{self, PlaneMapping};
 use crate::{
-    device::Device,
+    device::{Device, AllocatedQueue},
     memory::{BufferHandles, Mappable, PrimitiveBufferHandles},
 };
 use std::{
@@ -33,6 +33,7 @@ pub struct DqBuffer<D: Direction, P: BufferHandles> {
     /// Fuse that will put the buffer back into the `Free` state when this
     /// object is destroyed.
     fuse: BufferStateFuse<P>,
+    pool_size: usize,
     _d: std::marker::PhantomData<D>,
 }
 
@@ -57,9 +58,13 @@ impl<D: Direction, P: BufferHandles> DqBuffer<D, P> {
             buffer_info: Arc::downgrade(buffer),
             fuse,
             drop_callbacks: Default::default(),
+            pool_size: queue.num_buffers(),
             _d: std::marker::PhantomData,
         }
     }
+
+    /// Actual allocated queue size, as returned by VIDIOC_REQBUFS.
+    pub fn pool_size(&self) -> usize { self.pool_size }
 
     /// Attach a callback that will be called when the DQBuffer is destroyed,
     /// and after the buffer has been returned to the free list.
@@ -67,6 +72,13 @@ impl<D: Direction, P: BufferHandles> DqBuffer<D, P> {
     /// the inverse order that they were added.
     pub fn add_drop_callback<F: FnOnce(&mut Self) + Send + 'static>(&mut self, callback: F) {
         self.drop_callbacks.push(Box::new(callback));
+    }
+
+    /// Export an MMAP capture plane without mapping or copying its contents.
+    pub fn export_plane(&self, plane: usize) -> anyhow::Result<std::os::fd::OwnedFd> {
+        let device = self.device.upgrade().ok_or_else(|| anyhow::anyhow!("decoder device closed"))?;
+        Ok(crate::ioctl::expbuf(&*device, self.data.queue(), self.data.index() as usize,
+            plane, crate::ioctl::ExpbufFlags::CLOEXEC | crate::ioctl::ExpbufFlags::RDWR)?)
     }
 
     /// Return the plane handles of the buffer. This method is guaranteed to
